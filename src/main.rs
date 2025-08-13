@@ -18,6 +18,7 @@ use validator::Validate;
 enum AppError {
     SqlxError(sqlx::Error),
     ValidationError(String),
+    IdExists(String),
 }
 
 impl From<sqlx::Error> for AppError {
@@ -43,6 +44,10 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong".to_string())
             }
             AppError::ValidationError(err) => (StatusCode::BAD_REQUEST, err),
+            AppError::IdExists(id) => (
+                StatusCode::CONFLICT,
+                format!("ID '{}' already exists", id),
+            ),
         };
 
         (status, error_message).into_response()
@@ -60,6 +65,7 @@ struct AppState {
 struct ShortenRequest {
     #[validate(url)]
     url: String,
+    custom_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -77,7 +83,20 @@ async fn shorten(
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
 
-    let id = nanoid!(10);
+    let id = if let Some(custom_id) = payload.custom_id {
+        // Check if the custom ID already exists
+        let result: Result<SqliteRow, sqlx::Error> = sqlx::query("SELECT id FROM urls WHERE id = ?")
+            .bind(&custom_id)
+            .fetch_one(&state.pool)
+            .await;
+
+        if result.is_ok() {
+            return Err(AppError::IdExists(custom_id));
+        }
+        custom_id
+    } else {
+        nanoid!(10)
+    };
 
     sqlx::query("INSERT INTO urls (id, original_url) VALUES (?, ?)")
         .bind(&id)

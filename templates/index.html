@@ -7,6 +7,9 @@
     <h1>URL Shortener</h1>
     <form id="shorten-form">
         <input type="text" id="url-input" name="url" placeholder="Enter a URL" required>
+        <br>
+        <input type="text" id="custom-id-input" name="custom_id" placeholder="Optional custom ID">
+        <br>
         <button type="submit">Shorten</button>
     </form>
     <div id="result"></div>
@@ -18,13 +21,14 @@
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             const url = document.getElementById('url-input').value;
+            const custom_id = document.getElementById('custom-id-input').value || null;
 
             const response = await fetch('/shorten', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ url }),
+                body: JSON.stringify({ url, custom_id }),
             });
 
             if (response.ok) {
