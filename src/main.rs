@@ -11,14 +11,16 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqlitePool, SqliteRow};
 use sqlx::Row;
 use std::env;
+use validator::Validate;
 
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct ShortenRequest {
+    #[validate(url)]
     url: String,
 }
 
@@ -31,6 +33,10 @@ async fn shorten(
     State(state): State<AppState>,
     Json(payload): Json<ShortenRequest>,
 ) -> impl IntoResponse {
+    if let Err(err) = payload.validate() {
+        return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+    }
+
     let id = nanoid!(10);
 
     sqlx::query("INSERT INTO urls (id, original_url) VALUES (?, ?)")
@@ -42,7 +48,7 @@ async fn shorten(
 
     let short_url = format!("http://localhost:3000/{}", id);
 
-    (StatusCode::CREATED, Json(ShortenResponse { url: short_url }))
+    (StatusCode::CREATED, Json(ShortenResponse { url: short_url })).into_response()
 }
 
 async fn redirect(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
