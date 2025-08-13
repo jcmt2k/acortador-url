@@ -52,6 +52,8 @@ impl IntoResponse for AppError {
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
+    host: String,
+    port: u16,
 }
 
 #[derive(Deserialize, Validate)]
@@ -79,7 +81,7 @@ async fn shorten(
         .execute(&state.pool)
         .await?;
 
-    let short_url = format!("http://localhost:3000/{}", id);
+    let short_url = format!("http://{}:{}/{}", state.host, state.port, id);
 
     Ok((StatusCode::CREATED, Json(ShortenResponse { url: short_url })))
 }
@@ -104,12 +106,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pool = SqlitePool::connect(&db_url).await?;
 
+    let host = env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3000);
+
+    let app_state = AppState {
+        pool,
+        host: host.clone(),
+        port,
+    };
+
     let app = Router::new()
         .route("/shorten", post(shorten))
         .route("/:id", get(redirect))
-        .with_state(AppState { pool });
+        .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    let addr = format!("{}:{}", host, port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
 
