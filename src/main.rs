@@ -73,6 +73,12 @@ struct ShortenResponse {
     url: String,
 }
 
+#[derive(Serialize)]
+struct StatsResponse {
+    url: String,
+    clicks: i64,
+}
+
 async fn homepage() -> Html<&'static str> {
     Html(include_str!("../templates/index.html"))
 }
@@ -126,12 +132,29 @@ async fn redirect(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let row: SqliteRow = sqlx::query("SELECT original_url FROM urls WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .fetch_one(&state.pool)
+        .await?;
+
+    sqlx::query("UPDATE urls SET clicks = clicks + 1 WHERE id = ?")
+        .bind(&id)
+        .execute(&state.pool)
         .await?;
 
     let original_url: String = row.get("original_url");
     Ok(Redirect::to(&original_url))
+}
+
+async fn stats(State(state): State<AppState>, Path(id): Path<String>) -> Result<impl IntoResponse, AppError> {
+    let row: SqliteRow = sqlx::query("SELECT original_url, clicks FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let url: String = row.get("original_url");
+    let clicks: i64 = row.get("clicks");
+
+    Ok(Json(StatsResponse { url, clicks }))
 }
 
 #[tokio::main]
@@ -157,6 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(homepage))
         .route("/shorten", post(shorten))
         .route("/:id", get(redirect))
+        .route("/stats/:id", get(stats))
         .with_state(app_state);
 
     let addr = format!("{}:{}", host, port);
