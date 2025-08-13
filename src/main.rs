@@ -83,6 +83,18 @@ async fn shorten(
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
 
+    // Check if the URL already exists
+    let existing_url: Result<SqliteRow, sqlx::Error> = sqlx::query("SELECT id FROM urls WHERE original_url = ?")
+        .bind(&payload.url)
+        .fetch_one(&state.pool)
+        .await;
+
+    if let Ok(row) = existing_url {
+        let id: String = row.get("id");
+        let short_url = format!("http://{}:{}/{}", state.host, state.port, id);
+        return Ok((StatusCode::OK, Json(ShortenResponse { url: short_url })));
+    }
+
     let id = if let Some(custom_id) = payload.custom_id {
         // Check if the custom ID already exists
         let result: Result<SqliteRow, sqlx::Error> = sqlx::query("SELECT id FROM urls WHERE id = ?")
