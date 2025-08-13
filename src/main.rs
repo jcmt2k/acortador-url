@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Redirect},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
     Json, Router,
 };
@@ -67,6 +67,10 @@ struct ShortenResponse {
     url: String,
 }
 
+async fn homepage() -> Html<&'static str> {
+    Html(include_str!("../templates/index.html"))
+}
+
 async fn shorten(
     State(state): State<AppState>,
     Json(payload): Json<ShortenRequest>,
@@ -119,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let app = Router::new()
+        .route("/", get(homepage))
         .route("/shorten", post(shorten))
         .route("/:id", get(redirect))
         .with_state(app_state);
