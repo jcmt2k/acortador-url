@@ -13,6 +13,42 @@ use sqlx::Row;
 use std::env;
 use validator::Validate;
 
+// Custom error type
+#[derive(Debug)]
+enum AppError {
+    SqlxError(sqlx::Error),
+    ValidationError(String),
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        AppError::SqlxError(err)
+    }
+}
+
+impl From<validator::ValidationErrors> for AppError {
+    fn from(err: validator::ValidationErrors) -> Self {
+        AppError::ValidationError(err.to_string())
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        let (status, error_message) = match self {
+            AppError::SqlxError(sqlx::Error::RowNotFound) => {
+                (StatusCode::NOT_FOUND, "Not Found".to_string())
+            }
+            AppError::SqlxError(err) => {
+                eprintln!("Database error: {:?}", err);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong".to_string())
+            }
+            AppError::ValidationError(err) => (StatusCode::BAD_REQUEST, err),
+        };
+
+        (status, error_message).into_response()
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
@@ -32,10 +68,8 @@ struct ShortenResponse {
 async fn shorten(
     State(state): State<AppState>,
     Json(payload): Json<ShortenRequest>,
-) -> impl IntoResponse {
-    if let Err(err) = payload.validate() {
-        return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
-    }
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
 
     let id = nanoid!(10);
 
@@ -43,44 +77,41 @@ async fn shorten(
         .bind(&id)
         .bind(&payload.url)
         .execute(&state.pool)
-        .await
-        .unwrap();
+        .await?;
 
     let short_url = format!("http://localhost:3000/{}", id);
 
-    (StatusCode::CREATED, Json(ShortenResponse { url: short_url })).into_response()
+    Ok((StatusCode::CREATED, Json(ShortenResponse { url: short_url })))
 }
 
-async fn redirect(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
-    let result: Result<SqliteRow, sqlx::Error> = sqlx::query("SELECT original_url FROM urls WHERE id = ?")
+async fn redirect(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let row: SqliteRow = sqlx::query("SELECT original_url FROM urls WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
-        .await;
+        .await?;
 
-    match result {
-        Ok(row) => {
-            let original_url: String = row.get("original_url");
-            Redirect::to(&original_url).into_response()
-        }
-        Err(_) => (StatusCode::NOT_FOUND, "Not Found").into_response(),
-    }
+    let original_url: String = row.get("original_url");
+    Ok(Redirect::to(&original_url))
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let pool = SqlitePool::connect(&db_url).await.unwrap();
+    let pool = SqlitePool::connect(&db_url).await?;
 
     let app = Router::new()
         .route("/shorten", post(shorten))
         .route("/:id", get(redirect))
         .with_state(AppState { pool });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    println!("listening on {}", listener.local_addr()?);
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }
