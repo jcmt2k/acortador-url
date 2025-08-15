@@ -265,6 +265,15 @@ sqlx database setup
 
 Este enfoque hace que nuestro contenedor sea completamente auto-suficiente. Cualquiera puede ejecutarlo y la base de datos se creará y configurará automáticamente al primer inicio.
 
----
+
 
 ¡Gracias por explorar este proyecto! Esperamos que te haya sido útil para aprender y experimentar con Rust y Docker.
+
+## Licencia
+
+Este proyecto está bajo la **Licencia MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+
+## Contribuciones
+
+Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para mejorar, no dudes en abrir un *issue* o un *pull request*.
+
